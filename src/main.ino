@@ -88,13 +88,16 @@ void loop() {
 
         // If a complete frame has been recevied
         if (read_cursor > 8) {
-            // Put the read cursor at the beginning
-            read_cursor = 0;
-
             // If the frame is finishing by '\n' then copying the temporary serial buffer to the read_serial_buffer
             if (temporary_read_serial_buffer[8] == '\n') {
                 memcpy(read_serial_buffer, temporary_read_serial_buffer, 8);
             }
+
+            // Put the read cursor at the beginning
+            read_cursor = 0;
+
+            // Clear temporary_read_serial_buffer to avoid letting data in it for the next read (such as the final '\n')
+            memset(temporary_read_serial_buffer, 0, 9);
             break;
         }
     }
