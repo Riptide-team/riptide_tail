@@ -1,3 +1,9 @@
+# Compilation
+
+## Arduino makefile
+
+To compile and upload the code on the Arduino, [Arduino-Makefile](https://github.com/sudar/Arduino-Makefile) is used. Once installed, go to src, check that the arduino port is the port put in the Makefile at `MONITOR_PORT  = /dev/ttyUSB0`, and execute `make upload` 
+
 # Serial communication
 
 ## Baudrate
@@ -58,7 +64,7 @@ Thruster full forward, fins full backward, in manual mode, with timer at the min
 
 `\0x07\0xD0\0x03\0xE8\0x03\0xE8\0x53\0xE8\0x07\0xD0\0x03\0xE8\0x07\0xD0\0x03\0xE8\0x03\0xE8\0x53\0xE8\0x0A`
 
-## Picocom debug
+## Picocom serial debug
 
 To debug the serial communication, picocom can be used with the following configuration to correctly print hex characters:
 
