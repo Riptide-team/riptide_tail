@@ -26,7 +26,7 @@ bool manual=false;
 
 // Temporary serial read buffer 
 uint8_t read_cursor = 0;
-uint8_t temporary_read_serial_buffer[10];
+uint8_t temporary_read_serial_buffer[9];
 
 // Read serial buffer
 uint8_t read_serial_buffer[8];
@@ -80,19 +80,19 @@ void loop() {
     }
 
     // Reading commands from serial
-    while ((Serial.available()) and (read_cursor < 10)) {
+    while ((Serial.available()) and (read_cursor < 9)) {
         // Reading incomming char
         uint8_t inByte = Serial.read();
         temporary_read_serial_buffer[read_cursor] = inByte;
         read_cursor++;
 
         // If a complete frame has been recevied
-        if (read_cursor > 9) {
+        if (read_cursor > 8) {
             // Put the read cursor at the beginning
             read_cursor = 0;
 
-            // If the frame is finishing by "\r\n" then copying the temporary serial buffer to the read_serial_buffer
-            if ((temporary_read_serial_buffer[8] == "\r") and (temporary_read_serial_buffer[9] == "\n")) {
+            // If the frame is finishing by '\n' then copying the temporary serial buffer to the read_serial_buffer
+            if (temporary_read_serial_buffer[8] == '\n') {
                 memcpy(read_serial_buffer, temporary_read_serial_buffer, 8);
             }
             break;
@@ -116,7 +116,7 @@ void loop() {
     Serial.write(read_rc_buffer, 12);
 
     // Serial new line
-    Serial.write("\r\n");
+    Serial.write('\n');
 
     // Loop delay
     delay(LOOP_DELAY);
