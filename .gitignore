@@ -33,3 +33,7 @@
 
 # Arduino makefile
 **build**
+
+# Allow all FCStd not FCStd*
+*.FCStd*
+!*.FCStd
