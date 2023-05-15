@@ -29,15 +29,13 @@ class TailController:
 
         while self.serial.is_open:
             # Reading incoming bytes into the buffer
-            # a = self.serial.readline()
-            # print(a, a.decode())
-            # self.buffer += a
+            self.buffer += (self.serial.read_all()).decode()
 
             # If a complete frame is in the buffer
-            # if "\n" in self.buffer:
-            #     frame, self.buffer = self.buffer.split("\n", 1)
-            #     # Print the frame
-            #     print(frame)
+            if "\n" in self.buffer:
+                frame, self.buffer = self.buffer.split("\n", 1)
+                # Print the frame
+                print(frame)
 
             # Write RHACT frame
             frame = self.RHACT()
