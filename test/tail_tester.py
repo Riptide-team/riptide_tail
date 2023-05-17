@@ -33,14 +33,14 @@ class TailController:
 
             # If a complete frame is in the buffer
             if "\n" in self.buffer:
-                frame, self.buffer = self.buffer.split("\n", 1)
+                frame, self.buffer = self.buffer.split("\r\n", 1)
                 # Print the frame
                 print(frame)
 
             # Write RHACT frame
             frame = self.RHACT()
             self.serial.write(frame.encode())
-            print(frame)
+            print(frame[:-2])
             time.sleep(self.sleeping_time)
 
     def RHACT(self):
@@ -53,7 +53,7 @@ class TailController:
 
 if __name__ == "__main__":
     baudrate = 115200
-    port = "/dev/ttyUSB1"
+    port = "/dev/ttyUSB0"
 
     # Opening serial
     tc = TailController(port, baudrate)
