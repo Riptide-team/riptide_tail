@@ -49,7 +49,7 @@ class TailController:
     def RHACT(self):
         ''' Generate RHACT nmea frames to orient D Fin '''
         value = int(500 * np.sin(time.time() / np.pi) + 1500)
-        rhact = f"RHACT,{value},1500,1500,1500"
+        rhact = f"RHACT,1500,{value},1500,1500"
         checksum = reduce(operator.xor, (ord(s) for s in rhact), 0)
         return "$" + rhact + f"*{checksum:02X}\r\n"
 
