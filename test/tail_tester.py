@@ -29,7 +29,10 @@ class TailController:
 
         while self.serial.is_open:
             # Reading incoming bytes into the buffer
-            self.buffer += (self.serial.read_all()).decode()
+            try:
+                self.buffer += (self.serial.read_all()).decode()
+            except:
+                pass
 
             # If a complete frame is in the buffer
             if "\n" in self.buffer:
