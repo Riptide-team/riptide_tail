@@ -4,8 +4,12 @@
 #include <string.h>
 
 
+#define ms() 96*millis()
+
+
 // Loop delay
 #define LOOP_DELAY 20      // ms
+uint32_t t0_loop_time;
 
 // Initialize a PPMReader on digital pin 3 with 6 expected channels.
 #define RC_PIN 3            // D3
@@ -38,17 +42,24 @@ NMEAParser<1> parser;
 
 // Read serial buffer
 uint16_t read_serial_buffer[4];
+
+// Read stopping criterion to not block the loop
 bool complete_frame = false;
+uint8_t read_cursor = 0;
+uint8_t read_cursor_max = 128;
+
+// Last time command received from serial
+#define SERIAL_TIMEOUT 3000
+uint32_t time_read_serial = 0;
 
 // RC read buffer
 uint16_t read_rc_buffer[CHANNEL_AMOUNT];
 
-// Initialize serial read and write buffers
+// Initialize serial write buffers
 uint16_t write_buffer[4];
 
 // Maximum time for multiplexer in ms (compared to millis() to know how to multiplex RC and Raspberry Pi)
-uint32_t t_multiplexer_max;
-// float remaining_time = 0;
+unsigned long t_multiplexer_max;
 
 void write_actuators() {
     thruster.writeMicroseconds(write_buffer[0]);
@@ -76,90 +87,173 @@ void RHACT_handler() {
 
         // If there is no errors, copying it in read_buffer
         if (read_flag) {
-            memcpy(read_serial_buffer, temporary_read_buffer, 4);
+            memcpy(read_serial_buffer, temporary_read_buffer, 4*sizeof(uint16_t));
         }
+        time_read_serial = ms();
     }
 }
 
-byte CRC(char* buffer, uint8_t n) {
-    byte crc = 0;
-    for (uint8_t i = 1; i < n; ++i){ // XOR every character
+uint8_t CRC(char* buffer, uint8_t n) {
+    uint8_t crc = 0;
+    for (uint8_t i = 0; i < n; ++i){ // XOR every character
       crc = crc ^ buffer[i] ;  // compute CRC
     }
     return crc;
 }
 
+void CheckSum(uint8_t &checksum, char c) {
+    checksum = checksum ^ c;  // compute CRC
+}
+
+char toUpper(char c) {
+    if(c >= 'a' && c <= 'z') c += 'A' - 'a';
+    return c;
+}
+
 
 void RTRCR_write() {
-    char rtrcr[128] = "\0";
+    // Header
+    uint8_t checksum = 105; 
+    Serial.print("$RTRCR,");
 
-    // Building NMEA sentence
-    strcat(rtrcr, "RTRCR,");
     for (uint8_t channel = 0; channel < CHANNEL_AMOUNT; ++channel) {
+        // Printing Channel
+        Serial.print(read_rc_buffer[channel]);
+
+        // Computing CheckSum
         char channel_buffer[4];
         itoa(read_rc_buffer[channel], channel_buffer, 10);
-        strcat(rtrcr, channel_buffer);
-        strcat(rtrcr, ",");
+        for (uint8_t i=0; i<4; ++i) {
+            CheckSum(checksum, channel_buffer[i]);
+        }
+
+        // Adding ',' except for the last loop 
+        if (channel < CHANNEL_AMOUNT-1) {
+            Serial.print(',');
+            CheckSum(checksum, ',');
+        }
     }
-    uint8_t length = strlen(rtrcr);
-    rtrcr[length-1] = '\0';
 
-    // Computing CRC
-    byte crc = CRC(rtrcr, length-1);
+    // Printing *
+    Serial.print("*");
 
-    Serial.write("$");
-    Serial.write(rtrcr);
-    Serial.write("*");
-    Serial.write(crc);
+    // Printing CRC and ending the frame
+    char crc_buffer[2];
+    itoa (checksum, crc_buffer, 16);
+    Serial.print(toUpper(crc_buffer[0]));
+    Serial.print(toUpper(crc_buffer[1]));
+
+    // Printing \r\n
+    Serial.print("\r\n");
 }
 
 void RTACT_write() {
-    char rtact[128] = "\0";
+    // Header
+    uint8_t checksum = 124; 
+    Serial.print("$RTACT,");
 
     // Building NMEA sentence
-    strcat(rtact, "RTACT,");
     for (uint8_t channel = 0; channel < 4; ++channel) {
+        // Printing channel value
+        Serial.print(write_buffer[channel]);
+
+        // Computing checksum
         char channel_buffer[4];
         itoa(write_buffer[channel], channel_buffer, 10);
-        strcat(rtact, channel_buffer);
-        strcat(rtact, ",");
+        for (uint8_t i=0; i<4; ++i) {
+            CheckSum(checksum, channel_buffer[i]);
+        }
+
+        // Adding ',' except for the last loop 
+        if (channel < 3) {
+            Serial.print(',');
+            CheckSum(checksum, ',');
+        }
     }
-    uint8_t length = strlen(rtact);
-    rtact[length-1] = '\0';
 
-    // Computing CRC
-    byte crc = CRC(rtact, length-1);
+    // Printing *
+    Serial.print("*");
 
-    Serial.write("$");
-    Serial.write(rtact);
-    Serial.write("*");
-    Serial.write(crc);
+    // Printing CRC and ending the frame
+    char crc_buffer[2];
+    itoa (checksum, crc_buffer, 16);
+    Serial.print(toUpper(crc_buffer[0]));
+    Serial.print(toUpper(crc_buffer[1]));
+
+    // Printing \r\n
+    Serial.print("\r\n");
 }
 
 void RTMPX_write() {
-    char rtmpx[128] = "\0";
+    // Header
+    uint8_t checksum = 111; 
+    Serial.print("$RTMPX,");
 
-    // Building NMEA sentence
-    strcat(rtmpx, "RTMPX,");
-    if (manual) {
-        strcat(rtmpx, "0,");
+    // Computing remaining time
+    float remaining_time = ((float)t_multiplexer_max - (float)ms()) / 1000.f;
+
+    // Printing first argument (0 for RC / 1 for RH)
+    if (manual or remaining_time <= 0.) {
+        Serial.print('0');
+        CheckSum(checksum, '0');
     }
     else {
-        strcat(rtmpx, "1,");
+        Serial.print('1');
+        CheckSum(checksum, '1');
     }
     
-    char time_buffer[7];
-    dtostrf((t_multiplexer_max - millis()), 0, 3, time_buffer);
-    strcat(rtmpx, time_buffer);
+    // Printing ','
+    Serial.print(',');
+    CheckSum(checksum, ',');
 
-    // Computing CRC
-    uint8_t length = strlen(rtmpx);
-    byte crc = CRC(rtmpx, length-1);
+    // Printing remaining seconds
+    if (remaining_time >= 0.f) {
+        // Computing seconds, dsecs, csecs and msecs
+        int secs = int(remaining_time);
+        int msecs = int(remaining_time*1000 - secs*1000);
 
-    Serial.write("$");
-    Serial.write(rtmpx);
-    Serial.write("*");
-    Serial.write(crc);
+        // Putting int part
+        uint8_t i = 0;
+        char time_buffer[3];
+        itoa(secs, time_buffer, 10);
+        while ((i<3) and (time_buffer[i] != '\0')) {
+            Serial.print(time_buffer[i]);
+            CheckSum(checksum, time_buffer[i]);
+            i++;
+        }
+
+        Serial.print('.');
+        CheckSum(checksum, '.');
+
+        // Putting int part
+        i = 0;
+        itoa(msecs, time_buffer, 10);
+        while ((i<3) and (time_buffer[i] != '\0')) {
+            Serial.print(time_buffer[i]);
+            CheckSum(checksum, time_buffer[i]);
+            i++;
+        }
+    }
+    else {
+        Serial.print("0.000");
+        CheckSum(checksum, '0');
+        CheckSum(checksum, '.');
+        CheckSum(checksum, '0');
+        CheckSum(checksum, '0');
+        CheckSum(checksum, '0');
+    }
+
+    // Printing *
+    Serial.print("*");
+
+    // Printing CRC and ending the frame
+    char crc_buffer[2];
+    itoa(checksum, crc_buffer, 16);
+    Serial.print(toUpper(crc_buffer[0]));
+    Serial.print(toUpper(crc_buffer[1]));
+
+    // Printing \r\n
+    Serial.print("\r\n");
 }
 
 
@@ -191,23 +285,31 @@ void setup() {
     }
 
     // Init t0
-    t_multiplexer_max = millis();
+    t_multiplexer_max = ms();
 }
 
 void loop() {
+    // Getting t0_loop time
+    t0_loop_time = ms();
+
     // Reading PPM RC Receiver into write buffer
     for (uint8_t channel = 0; channel < CHANNEL_AMOUNT; ++channel) {
         read_rc_buffer[channel] = ppm.latestValidChannelValue(channel, PWM_NEUTRAL);
     }
 
     // Write RTRCR NMEA sentences
-    RTRCR_write();
+    // RTRCR_write();
 
     // Reading commands from serial
-    while ((!complete_frame) and (Serial.available())) {
+    while ((read_cursor < read_cursor_max) and (!complete_frame) and (Serial.available())) {
         // Reading incomming char into the NMEA parser
         parser << Serial.read();
+        read_cursor++;
     }
+
+    // Reseting the complete frame variable to parse sentences
+    complete_frame = false;
+    read_cursor = 0;
 
     // Checking if the manual button is triggered
     uint16_t manual_value = read_rc_buffer[0];
@@ -219,7 +321,7 @@ void loop() {
     }
 
     // Getting the current time
-    uint32_t current_time = millis();
+    unsigned long current_time = ms();
 
     // Getting time from RC if provided
     uint16_t time_value = read_rc_buffer[1];
@@ -230,17 +332,27 @@ void loop() {
         // If the button was previously pressed
         if (rc_timer_button_pressed) {
             // Setting end mission time in ms
-            t_multiplexer_max = current_time + 2 * (time_value - 1500);
+            t_multiplexer_max = ((unsigned long)current_time + 200ul * ((unsigned long)time_value - 1500ul));
+            rc_timer_button_pressed = false;
         }
-        rc_timer_button_pressed = false;
     }
 
     // Writing commands on actuators depending on the manual or automatic mode and remaining multiplexer time
-    if (manual or (current_time > t_multiplexer_max)) {
-        memcpy(write_buffer, read_rc_buffer+3, 4);
+    if (manual) {
+        memcpy(write_buffer, read_rc_buffer+2, 4*sizeof(uint16_t));
     }
     else {
-        memcpy(write_buffer, read_serial_buffer, 4);
+        // If the current time is over the multiplexer time or the last time a command was received is greater than SERIAL_TIMEOUT
+        if ((current_time - time_read_serial > SERIAL_TIMEOUT) or (current_time > t_multiplexer_max)) {
+            // Setting all servos to neutral
+            for (uint8_t i=0; i<4; ++i) {
+                write_buffer[i] = PWM_NEUTRAL;
+            }
+        }
+        else {
+            // Write serial received commands to actuators
+            memcpy(write_buffer, read_serial_buffer, 4*sizeof(uint16_t));
+        }
     }
 
     write_actuators();
@@ -249,11 +361,10 @@ void loop() {
     RTACT_write();
 
     // Write RTMPX NMEA sentences
-    RTMPX_write();
-
-    // Reseting the complete frame variable to parse sentences
-    complete_frame = false;
+    // RTMPX_write();
 
     // Loop delay
-    delay(LOOP_DELAY);
+    while(ms() < t0_loop_time + LOOP_DELAY) {
+        delayMicroseconds(1);
+    }
 }
