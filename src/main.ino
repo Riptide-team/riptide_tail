@@ -298,7 +298,7 @@ void loop() {
     }
 
     // Write RTRCR NMEA sentences
-    // RTRCR_write();
+    RTRCR_write();
 
     // Reading commands from serial
     while ((read_cursor < read_cursor_max) and (!complete_frame) and (Serial.available())) {
@@ -361,7 +361,7 @@ void loop() {
     RTACT_write();
 
     // Write RTMPX NMEA sentences
-    // RTMPX_write();
+    RTMPX_write();
 
     // Loop delay
     while(ms() < t0_loop_time + LOOP_DELAY) {

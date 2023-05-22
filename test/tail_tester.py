@@ -56,7 +56,7 @@ class TailController:
 
 if __name__ == "__main__":
     baudrate = 115200
-    port = "/dev/ttyUSB0"
+    port = "/dev/ttyACM0"
 
     # Opening serial
     tc = TailController(port, baudrate)
