@@ -53,8 +53,9 @@ class TailController:
         ''' Generate RHACT nmea frames to orient D Fin '''
         value = int(500 * np.sin(time.time() / np.pi) + 1500)
 
-        if (time.time() - self.previous_time > 5):
+        if (time.time() - self.previous_time > 1):
             self.value = ((self.value + 100) % 1000 + 1000)
+            self.previous_time = time.time()
 
         rhact = f"RHACT,1500,{self.value},1500,1500"
         checksum = reduce(operator.xor, (ord(s) for s in rhact), 0)
