@@ -4,11 +4,8 @@
 #include <string.h>
 
 
-#define ms() 96*millis()
-
-
 // Loop delay
-#define LOOP_DELAY 20      // ms
+#define LOOP_DELAY 40      // ms
 uint32_t t0_loop_time;
 
 // Initialize a PPMReader on digital pin 3 with 6 expected channels.
@@ -37,6 +34,9 @@ bool manual=false;
 // Multiplexer RC Timer button pressed
 bool rc_timer_button_pressed=false;
 
+// Previous time_value
+uint16_t previous_time_value;
+
 // NMEA Parser declared with 1 handler for RHACT sentences
 NMEAParser<1> parser;
 
@@ -60,6 +60,20 @@ uint16_t write_buffer[4];
 
 // Maximum time for multiplexer in ms (compared to millis() to know how to multiplex RC and Raspberry Pi)
 unsigned long t_multiplexer_max;
+
+bool valid_commands(uint16_t *buffer) {
+    if (
+        (1000 <= buffer[0]) and (buffer[0] <= 2000) and
+        (1000 <= buffer[1]) and (buffer[1] <= 2000) and
+        (1000 <= buffer[2]) and (buffer[2] <= 2000) and
+        (1000 <= buffer[3]) and (buffer[3] <= 2000)
+    ) {
+        return true;
+    }
+    else {
+        return false;
+    }
+}
 
 void write_actuators() {
     thruster.writeMicroseconds(write_buffer[0]);
@@ -89,7 +103,7 @@ void RHACT_handler() {
         if (read_flag) {
             memcpy(read_serial_buffer, temporary_read_buffer, 4*sizeof(uint16_t));
         }
-        time_read_serial = ms();
+        time_read_serial = millis();
     }
 }
 
@@ -138,7 +152,7 @@ void RTRCR_write() {
     Serial.print("*");
 
     // Printing CRC and ending the frame
-    char crc_buffer[2];
+    char crc_buffer[3];
     itoa (checksum, crc_buffer, 16);
     Serial.print(toUpper(crc_buffer[0]));
     Serial.print(toUpper(crc_buffer[1]));
@@ -175,7 +189,7 @@ void RTACT_write() {
     Serial.print("*");
 
     // Printing CRC and ending the frame
-    char crc_buffer[2];
+    char crc_buffer[3];
     itoa (checksum, crc_buffer, 16);
     Serial.print(toUpper(crc_buffer[0]));
     Serial.print(toUpper(crc_buffer[1]));
@@ -190,10 +204,10 @@ void RTMPX_write() {
     Serial.print("$RTMPX,");
 
     // Computing remaining time
-    float remaining_time = ((float)t_multiplexer_max - (float)ms()) / 1000.f;
+    float remaining_time = ((float)t_multiplexer_max - (float)millis()) / 1000.f;
 
     // Printing first argument (0 for RC / 1 for RH)
-    if (manual or remaining_time <= 0.) {
+    if ((manual) or (remaining_time < 0.f)) {
         Serial.print('0');
         CheckSum(checksum, '0');
     }
@@ -247,7 +261,7 @@ void RTMPX_write() {
     Serial.print("*");
 
     // Printing CRC and ending the frame
-    char crc_buffer[2];
+    char crc_buffer[3];
     itoa(checksum, crc_buffer, 16);
     Serial.print(toUpper(crc_buffer[0]));
     Serial.print(toUpper(crc_buffer[1]));
@@ -285,12 +299,18 @@ void setup() {
     }
 
     // Init t0
-    t_multiplexer_max = ms();
+    t_multiplexer_max = millis();
+
+    // read_serial and write_buffer init
+    for (uint8_t i = 0; i < 4; ++i) {
+        write_buffer[i] = PWM_NEUTRAL;
+        read_serial_buffer[i] = PWM_NEUTRAL;
+    }
 }
 
 void loop() {
     // Getting t0_loop time
-    t0_loop_time = ms();
+    t0_loop_time = millis();
 
     // Reading PPM RC Receiver into write buffer
     for (uint8_t channel = 0; channel < CHANNEL_AMOUNT; ++channel) {
@@ -321,7 +341,7 @@ void loop() {
     }
 
     // Getting the current time
-    unsigned long current_time = ms();
+    unsigned long current_time = millis();
 
     // Getting time from RC if provided
     uint16_t time_value = read_rc_buffer[1];
@@ -332,10 +352,11 @@ void loop() {
         // If the button was previously pressed
         if (rc_timer_button_pressed) {
             // Setting end mission time in ms
-            t_multiplexer_max = ((unsigned long)current_time + 200ul * ((unsigned long)time_value - 1500ul));
+            t_multiplexer_max = ((unsigned long)current_time + 200ul * (max(0, (uint32_t)previous_time_value - 1500)));
             rc_timer_button_pressed = false;
         }
     }
+    previous_time_value = time_value;
 
     // Writing commands on actuators depending on the manual or automatic mode and remaining multiplexer time
     if (manual) {
@@ -343,7 +364,7 @@ void loop() {
     }
     else {
         // If the current time is over the multiplexer time or the last time a command was received is greater than SERIAL_TIMEOUT
-        if ((current_time - time_read_serial > SERIAL_TIMEOUT) or (current_time > t_multiplexer_max)) {
+        if ((current_time - time_read_serial > SERIAL_TIMEOUT) or (current_time > t_multiplexer_max) or (!valid_commands(read_serial_buffer))) {
             // Setting all servos to neutral
             for (uint8_t i=0; i<4; ++i) {
                 write_buffer[i] = PWM_NEUTRAL;
@@ -364,7 +385,5 @@ void loop() {
     RTMPX_write();
 
     // Loop delay
-    while(ms() < t0_loop_time + LOOP_DELAY) {
-        delayMicroseconds(1);
-    }
+    delay(LOOP_DELAY);
 }
